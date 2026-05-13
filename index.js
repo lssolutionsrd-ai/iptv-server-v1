@@ -1,4 +1,6 @@
 const express = require('express');
+const https = require('https');
+const http = require('http');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -7,85 +9,110 @@ const users = {
   'admin': 'admin123'
 };
 
-const liveCategories = [
-  { category_id: "1", category_name: "Noticias", parent_id: 0 },
-  { category_id: "2", category_name: "Entretenimiento", parent_id: 0 }
-];
+const M3U_URL = 'https://zona593movie.com:2096/playlist/kirikiflow/Soriano12/m3u_plus';
 
-const liveStreams = [
-  {
-    num: 1, name: "NASA TV", stream_type: "live", stream_id: 1,
-    stream_icon: "https://upload.wikimedia.org/wikipedia/commons/e/e5/NASA_logo.svg",
-    category_id: "1", added: "1609459200",
-    direct_source: "https://nasatv-lh.akamaihd.net/i/NASATV_1@592978/master.m3u8"
-  },
-  {
-    num: 2, name: "DW News", stream_type: "live", stream_id: 2,
-    stream_icon: "https://upload.wikimedia.org/wikipedia/commons/7/75/DW_logo_2012.svg",
-    category_id: "1", added: "1609459200",
-    direct_source: "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8"
-  },
-  {
-    num: 3, name: "France 24 Español", stream_type: "live", stream_id: 3,
-    stream_icon: "https://upload.wikimedia.org/wikipedia/commons/e/e3/France_24_logo.svg",
-    category_id: "1", added: "1609459200",
-    direct_source: "https://stream.france24.com/hls/live/2037163/F24_ES_LO_HLS/master.m3u8"
-  },
-  {
-    num: 4, name: "Bloomberg TV", stream_type: "live", stream_id: 4,
-    stream_icon: "",
-    category_id: "2", added: "1609459200",
-    direct_source: "https://bloomberg-bloombergtv.amagi.tv/playlist.m3u8"
-  }
-];
+let liveStreams = [];
+let vodStreams = [];
+let seriesStreams = [];
+let liveCategories = [];
+let vodCategories = [];
+let seriesCategories = [];
 
-const vodCategories = [
-  { category_id: "10", category_name: "Peliculas Gratis", parent_id: 0 }
-];
+function fetchM3U() {
+  return new Promise((resolve, reject) => {
+    https.get(M3U_URL, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
 
-const vodStreams = [
-  {
-    num: 1, name: "Big Buck Bunny", stream_type: "movie", stream_id: 100,
-    stream_icon: "https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg",
-    category_id: "10", added: "1609459200", rating: "8",
-    direct_source: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-  },
-  {
-    num: 2, name: "Elephant Dream", stream_type: "movie", stream_id: 101,
-    stream_icon: "",
-    category_id: "10", added: "1609459200", rating: "7",
-    direct_source: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
-  },
-  {
-    num: 3, name: "Subaru Outback Ad", stream_type: "movie", stream_id: 102,
-    stream_icon: "",
-    category_id: "10", added: "1609459200", rating: "6",
-    direct_source: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
-  }
-];
+function parseM3U(data) {
+  const lines = data.split('\n');
+  const live = [], vod = [], series = [];
+  const liveCats = {}, vodCats = {}, seriesCats = {};
+  let liveCatId = 1, vodCatId = 1, seriesCatId = 1;
+  let streamId = 1;
 
-const seriesCategories = [
-  { category_id: "20", category_name: "Series Gratis", parent_id: 0 }
-];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith('#EXTINF')) {
+      const url = lines[i + 1]?.trim();
+      if (!url || url.startsWith('#')) continue;
 
-const series = [
-  {
-    num: 1, name: "Elephant Dream Series", series_id: 200,
-    cover: "",
-    category_id: "20", rating: "7",
-    episodes: {
-      "1": [
-        {
-          id: "1", episode_num: 1, title: "Episodio 1", season: 1,
-          direct_source: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+      const nameMatch = line.match(/,(.+)$/);
+      const groupMatch = line.match(/group-title="([^"]*)"/);
+      const logoMatch = line.match(/tvg-logo="([^"]*)"/);
+
+      const name = nameMatch ? nameMatch[1].trim() : 'Sin nombre';
+      const group = groupMatch ? groupMatch[1].trim() : 'General';
+      const logo = logoMatch ? logoMatch[1] : '';
+
+      const isVod = /pelicul|movie|film|vod/i.test(group);
+      const isSeries = /serie|series|show/i.test(group);
+
+      if (isVod) {
+        if (!vodCats[group]) {
+          vodCats[group] = vodCatId++;
         }
-      ]
+        vod.push({
+          num: streamId, name, stream_type: 'movie',
+          stream_id: streamId, stream_icon: logo,
+          category_id: String(vodCats[group]),
+          added: '1609459200', rating: '8',
+          direct_source: url
+        });
+      } else if (isSeries) {
+        if (!seriesCats[group]) {
+          seriesCats[group] = seriesCatId++;
+        }
+        series.push({
+          num: streamId, name, stream_type: 'live',
+          stream_id: streamId, stream_icon: logo,
+          category_id: String(seriesCats[group]),
+          added: '1609459200',
+          direct_source: url
+        });
+      } else {
+        if (!liveCats[group]) {
+          liveCats[group] = liveCatId++;
+        }
+        live.push({
+          num: streamId, name, stream_type: 'live',
+          stream_id: streamId, stream_icon: logo,
+          category_id: String(liveCats[group]),
+          added: '1609459200',
+          direct_source: url
+        });
+      }
+      streamId++;
     }
   }
-];
+
+  liveStreams = live;
+  vodStreams = vod;
+  seriesStreams = series;
+  liveCategories = Object.entries(liveCats).map(([name, id]) => ({
+    category_id: String(id), category_name: name, parent_id: 0
+  }));
+  vodCategories = Object.entries(vodCats).map(([name, id]) => ({
+    category_id: String(id), category_name: name, parent_id: 0
+  }));
+  seriesCategories = Object.entries(seriesCats).map(([name, id]) => ({
+    category_id: String(id), category_name: name, parent_id: 0
+  }));
+
+  console.log(`Cargado: ${live.length} canales, ${vod.length} películas, ${series.length} series`);
+}
+
+// Cargar lista al iniciar
+fetchM3U().then(parseM3U).catch(console.error);
+// Actualizar cada 6 horas
+setInterval(() => fetchM3U().then(parseM3U).catch(console.error), 6 * 60 * 60 * 1000);
 
 app.get('/player_api.php', (req, res) => {
-  const { username, password, action, category_id, series_id } = req.query;
+  const { username, password, action, series_id } = req.query;
 
   if (!users[username] || users[username] !== password) {
     return res.json({ user_info: { auth: 0 } });
@@ -96,7 +123,7 @@ app.get('/player_api.php', (req, res) => {
       user_info: {
         auth: 1, username, password,
         status: "Active", exp_date: "9999999999",
-        is_trial: "0", active_cons: "1",
+        is_trial: "0", active_cons: "2",
         created_at: "1609459200", max_connections: "2",
         allowed_output_formats: ["m3u8", "ts"]
       },
@@ -116,11 +143,7 @@ app.get('/player_api.php', (req, res) => {
   if (action === 'get_vod_categories') return res.json(vodCategories);
   if (action === 'get_vod_streams') return res.json(vodStreams);
   if (action === 'get_series_categories') return res.json(seriesCategories);
-  if (action === 'get_series') return res.json(series);
-  if (action === 'get_series_info') {
-    const s = series.find(x => x.series_id == series_id);
-    return res.json(s || {});
-  }
+  if (action === 'get_series') return res.json(seriesStreams);
 
   res.json([]);
 });
