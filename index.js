@@ -9,7 +9,7 @@ const users = {
   'admin': 'admin123'
 };
 
-const M3U_URL = 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8';
+const M3U_URL = 'https://iptv-org.github.io/iptv/index.m3u';
 
 let liveStreams = [];
 let vodStreams = [];
