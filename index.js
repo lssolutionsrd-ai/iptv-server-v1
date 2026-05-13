@@ -9,7 +9,7 @@ const users = {
   'admin': 'admin123'
 };
 
-const M3U_URL = 'https://zona593movie.com:2096/playlist/kirikiflow/Soriano12/m3u_plus';
+const M3U_URL = 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8';
 
 let liveStreams = [];
 let vodStreams = [];
